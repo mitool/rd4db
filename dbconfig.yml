@@ -1,0 +1,15 @@
+Mongo {
+    User     : "admin"
+    Password : "admin"
+    Host     : "127.0.0.1:27020"
+    Database : "Statistics"
+    Options  : {}
+}
+
+MySQL {
+    User     : "root"
+    Password : "root"
+    Host     : "127.0.0.1:3306"
+    Database : "jigou"
+    Options  : {"charset": "utf8"}
+}
