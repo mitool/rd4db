@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"math"
+	"sync"
 
 	"github.com/admpub/confl"
 	"github.com/admpub/log"
@@ -84,67 +85,77 @@ func main() {
 
 	//使用Link(1)来选择索引编号为1的数据库连接(默认使用编号为0的连接)
 	result := factory.NewParam().Setter().Link(1).C(`libuser_detail`).Result()
-
+	total, err := factory.NewParam().Setter().Link(1).C(`libuser_detail`).Count()
+	if err != nil {
+		log.Fatal(err)
+	}
 	detail := map[string]string{}
+	wg := &sync.WaitGroup{}
+	wg.Add(int(total))
 	for result.Next(&detail) {
-		if len(detail["appid"]) == 0 {
-			continue
-		}
-		log.Info(`AppID`, detail["appid"])
+		go checkAppID(detail, wg)
+	}
+	result.Close()
+	wg.Wait()
+}
 
-		mdt := new([]EventModel)
-		cond := db.Cond{
-			"udid":     "00old00analysis00",
-			"event IN": []string{"downloadMag", "downloadBook"},
-		}
-		size := 1000
-		page := 1
+func checkAppID(detail map[string]string, wg *sync.WaitGroup) {
+	defer wg.Done()
+	if len(detail["appid"]) == 0 {
+		return
+	}
+	log.Info(`AppID`, detail["appid"])
 
-		//这里没有使用Link()函数，默认选择索引编号为0的数据库连接
-		cnt, err := factory.NewParam().Setter().C(`event` + detail["appid"]).Args(cond).Page(page).Size(size).Recv(mdt).List()
-		if err != nil {
-			if err == db.ErrNoMoreRows {
-				log.Error(err)
-				continue
-			}
-			log.Fatal(err)
+	mdt := new([]EventModel)
+	cond := db.Cond{
+		"udid":     "00old00analysis00",
+		"event IN": []string{"downloadMag", "downloadBook"},
+	}
+	size := 1000
+	page := 1
+
+	//这里没有使用Link()函数，默认选择索引编号为0的数据库连接
+	cnt, err := factory.NewParam().Setter().C(`event` + detail["appid"]).Args(cond).Page(page).Size(size).Recv(mdt).List()
+	if err != nil {
+		if err == db.ErrNoMoreRows || factory.IsTimeoutError(err) {
+			log.Error(err)
+			return
 		}
-		tot := cnt()
-		pages := int(math.Ceil(float64(tot) / float64(size)))
-		for ; page <= pages; page++ {
-			if page > 1 {
-				_, err = factory.NewParam().Setter().C(`event` + detail["appid"]).Args(cond).Page(page).Size(size).Recv(mdt).List()
-				if err != nil {
-					if err == db.ErrNoMoreRows {
-						log.Error(err)
-						break
-					}
-					log.Fatal(err)
+		log.Fatal(err)
+	}
+	tot := cnt()
+	pages := int(math.Ceil(float64(tot) / float64(size)))
+	for ; page <= pages; page++ {
+		if page > 1 {
+			_, err = factory.NewParam().Setter().C(`event` + detail["appid"]).Args(cond).Page(page).Size(size).Recv(mdt).List()
+			if err != nil {
+				if err == db.ErrNoMoreRows || factory.IsTimeoutError(err) {
+					log.Error(err)
+					break
+				}
+				log.Fatal(err)
+			}
+		}
+		for _, row := range *mdt {
+			n, err := factory.NewParam().Setter().C(`event` + detail["appid"]).Args(db.Cond{
+				"_id <>":            row.ID,
+				"timestamp":         row.Timestamp,
+				"account.accountId": row.Account.ID,
+			}).Count()
+			if err == nil && n > 0 {
+				log.Infof(`Found %d duplicate(s) => %s`, n, row.ID)
+				err = factory.NewParam().Setter().C(`event` + detail["appid"]).Args(db.Cond{"_id": row.ID}).Delete()
+				if err == nil {
+					log.Info(`Remove success.`)
 				}
 			}
-			for _, row := range *mdt {
-				n, err := factory.NewParam().Setter().C(`event` + detail["appid"]).Args(db.Cond{
-					"_id <>":            row.ID,
-					"timestamp":         row.Timestamp,
-					"account.accountId": row.Account.ID,
-				}).Count()
-				if err == nil && n > 0 {
-					log.Infof(`Found %d duplicate(s) => %s`, n, row.ID)
-					err = factory.NewParam().Setter().C(`event` + detail["appid"]).Args(db.Cond{"_id": row.ID}).Delete()
-					if err == nil {
-						log.Info(`Remove success.`)
-					}
+			if err != nil {
+				if err == db.ErrNoMoreRows || factory.IsTimeoutError(err) {
+					log.Error(err)
+					break
 				}
-				if err != nil {
-					if err == db.ErrNoMoreRows {
-						log.Error(err)
-						break
-					}
-					log.Fatal(err)
-				}
+				log.Fatal(err)
 			}
 		}
 	}
-	result.Close()
-
 }
