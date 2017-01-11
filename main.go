@@ -342,7 +342,10 @@ func checkEvent(detail map[string]string, wg *sync.WaitGroup) {
 
 //插入品牌ID
 func insertBrandId(row EventModel, detail map[string]string) error {
-	var brandId string //dudubao.mag_list', 'dudubao_bak.mag_list_bak
+	if len(row.Content.ID) == 0 {
+		return nil
+	}
+	var brandId string
 	recv := map[string]string{}
 	err := factory.NewParam().Setter().Link(1).C(`dudubao.mag_list`).Args(db.Cond{"id": row.Content.ID}).Recv(&recv).One()
 	if err != nil {
