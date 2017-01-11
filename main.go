@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"math"
 	"strings"
 	"sync"
@@ -28,9 +29,9 @@ type CateModel struct {
 }
 
 type ContentModel struct {
-	ID    string     `bson:"id" db:"id"`
-	Title string     `bson:"title" db:"title"`
-	Cate  *CateModel `bson:"cate" db:"cate"`
+	ID    interface{} `bson:"id" db:"id"`
+	Title string      `bson:"title" db:"title"`
+	Cate  *CateModel  `bson:"cate" db:"cate"`
 }
 
 type EventModel struct {
@@ -138,6 +139,7 @@ var executors = map[string]*Executor{
 	},
 	"insertBrandId": &Executor{
 		Cond: db.Cond{
+			"timestamp >=":         strToTime(`2016-11-01 00:00:00`).Unix(),
 			"content.bid $exists":  false,
 			"content.cate $exists": false,
 			"event IN": []string{
@@ -147,6 +149,11 @@ var executors = map[string]*Executor{
 		},
 		Func: insertBrandId,
 	},
+}
+
+func strToTime(value string) time.Time {
+	t, _ := time.Parse(`2006-01-02 15:04:05`, value)
+	return t
 }
 
 func checkAppID(detail map[string]string, wg *sync.WaitGroup) {
@@ -342,21 +349,23 @@ func checkEvent(detail map[string]string, wg *sync.WaitGroup) {
 
 //插入品牌ID
 func insertBrandId(row EventModel, detail map[string]string) error {
-	if len(row.Content.ID) == 0 {
+	if row.Content.ID == nil {
+		log.Warn(`content.id is empty: `, row.ID)
 		return nil
 	}
+	id := fmt.Sprint(row.Content.ID)
 	var brandId string
 	recv := map[string]string{}
-	err := factory.NewParam().Setter().Link(1).C(`dudubao.mag_list`).Args(db.Cond{"id": row.Content.ID}).Recv(&recv).One()
+	err := factory.NewParam().Setter().Link(1).C(`dudubao.mag_list`).Args(db.Cond{"id": id}).Recv(&recv).One()
 	if err != nil {
 		if err == db.ErrNoMoreRows {
-			err = factory.NewParam().Setter().Link(1).C(`dudubao_bak.mag_list_bak`).Args(db.Cond{"id": row.Content.ID}).Recv(&recv).One()
+			err = factory.NewParam().Setter().Link(1).C(`dudubao_bak.mag_list_bak`).Args(db.Cond{"id": id}).Recv(&recv).One()
 		}
 	}
 	if err != nil {
 		return err
 	}
-	log.Infof(`Update [%s] %s => %s`, row.ID, row.Content.ID, recv["sort_id"])
+	log.Infof(`Update [%s] %s => %s`, row.ID, id, recv["sort_id"])
 	brandId = recv["sort_id"]
 	if len(brandId) == 0 || brandId == `0` {
 		log.Warn(` -> Skiped.`)
