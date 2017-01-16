@@ -89,7 +89,7 @@ func main() {
 	factory.AddCluster(cluster) //第一次添加。索引编号为0
 	clusterMySQL := factory.NewCluster().AddW(dbMySQL)
 	factory.AddCluster(clusterMySQL) //第二次添加。索引编号为1，以此类推。
-	factory.SetDebug(true)           //调试时可以打开Debug模式来查看sql语句
+	//factory.SetDebug(true)           //调试时可以打开Debug模式来查看sql语句
 	defer factory.CloseAll()
 
 	detail := map[string]string{}
@@ -98,7 +98,7 @@ func main() {
 	wg := &sync.WaitGroup{}
 	if _, ok := detail["appid"]; ok {
 		wg.Add(1)
-		go checkAppID(detail, wg)
+		checkAppID(detail, wg)
 	} else {
 		//使用Link(1)来选择索引编号为1的数据库连接(默认使用编号为0的连接)
 		result := factory.NewParam().Setter().Link(1).C(`libuser_detail`).Result()
@@ -118,6 +118,7 @@ func main() {
 		result.Close()
 	}
 	wg.Wait()
+	log.Info(`任务完成`)
 }
 
 type Executor struct {
@@ -175,6 +176,8 @@ func checkAppID(detail map[string]string, wg *sync.WaitGroup) {
 	size := 1000
 	page := 1
 
+	log.Info(`开始查询第1页`)
+
 	//这里没有使用Link()函数，默认选择索引编号为0的数据库连接
 	cnt, err := factory.NewParam().Setter().C(`event` + detail["appid"]).Args(cond).Page(page).Size(size).Recv(mdt).List()
 	if err != nil {
@@ -188,6 +191,7 @@ func checkAppID(detail map[string]string, wg *sync.WaitGroup) {
 	pages := int(math.Ceil(float64(tot) / float64(size)))
 	for ; page <= pages; page++ {
 		if page > 1 {
+			log.Infof(`开始查询第%d页，共%d页`, page, pages)
 			_, err = factory.NewParam().Setter().C(`event` + detail["appid"]).Args(cond).Page(page).Size(size).Recv(mdt).List()
 			if err != nil {
 				if err == db.ErrNoMoreRows || factory.IsTimeoutError(err) {
