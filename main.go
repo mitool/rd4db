@@ -74,6 +74,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	//factory.SetDebug(true) //调试时可以打开Debug模式来查看sql语句
 	mongo.ConnTimeout = time.Second * 30
 	dbMongo, err := mongo.Open(dbConfig.Mongo)
 	if err != nil {
@@ -89,7 +90,6 @@ func main() {
 	factory.AddCluster(cluster) //第一次添加。索引编号为0
 	clusterMySQL := factory.NewCluster().AddW(dbMySQL)
 	factory.AddCluster(clusterMySQL) //第二次添加。索引编号为1，以此类推。
-	//factory.SetDebug(true)           //调试时可以打开Debug模式来查看sql语句
 	defer factory.CloseAll()
 
 	detail := map[string]string{}
